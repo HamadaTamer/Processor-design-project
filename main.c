@@ -80,12 +80,12 @@ int load_instructions(const char *filename) {
             char *d_tok = strtok(NULL, " ");
             char *t_tok = strtok(NULL, " ");
             char *s_tok = strtok(NULL, " ");
-            int rd, rs, rt= 0;
+            int rd, rs, rt;
 
             if (strcmp(op, "SLL") == 0 || strcmp(op, "SRL") == 0) {
                 rd = atoi(d_tok+1), rt = atoi(t_tok+1),rs = atoi(s_tok);
             }else{
-                rd = atoi(d_tok+1), rt = atoi(t_tok+1),rs = atoi(s_tok+1);
+                rd = atoi(d_tok+1),rs = atoi(s_tok+1),rt = atoi(t_tok+1);
             }
             
             int opcode = (strcmp(op,"ADD")==0) ? 0
@@ -94,7 +94,7 @@ int load_instructions(const char *filename) {
             if (strcmp(op, "SLL") == 0 || strcmp(op, "SRL") == 0) {
                 memory[count++] = (opcode << 28)    | (rd << 23) | (rt << 18)    | (rs );
             } else {
-                memory[count++] = (opcode << 28)    | (rd << 23) | (rt << 18)    | (rs << 13);
+                memory[count++] = (opcode << 28)    | (rd << 23) | (rs << 18)    | (rt << 13);
             }
         }
         else if (strcmp(op, "ADDI")==0 || strcmp(op, "ANDI")==0
@@ -108,8 +108,7 @@ int load_instructions(const char *filename) {
                 fprintf(stderr, "Bad I-type at line %d\n", count+1);
                 continue;
             }
-            int rd = atoi(d_tok+1), rs = atoi(s_tok+1),
-                imm = atoi(imm_tok);
+            int rd = atoi(d_tok+1), rs = atoi(s_tok+1),imm = atoi(imm_tok);
             int opcode;
             if      (strcmp(op,"MULI")==0) opcode = 2;
             else if (strcmp(op,"ADDI")==0) opcode = 3;
@@ -239,10 +238,10 @@ void execute(){
             pipe[2].aluOut = (PC & 0x70000000) || pipe[0].srcB;
             break;
         case 8:
-            pipe[2].aluOut = pipe[1].srcA << pipe[1].shamt;
+            pipe[2].aluOut = pipe[1].srcB << pipe[1].shamt;
             break;
         case 9:
-            pipe[2].aluOut = pipe[1].srcA >> pipe[1].shamt; 
+            pipe[2].aluOut = pipe[1].srcB >> pipe[1].shamt; 
             break;
         default:
             break;
@@ -252,7 +251,7 @@ void execute(){
             pipe[2].rd = pipe[1].rd;
             pipe[2].instr = pipe[1].instr;
             pipe[1].valid = false;
-            pipe[1].instr = 0; // clear the instruction in the decode stage
+            //pipe[1].instr = 0; // clear the instruction in the decode stage
         }
     }
 }
