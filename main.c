@@ -16,6 +16,15 @@ int PC =0;
 const uint32_t zeroReg = 0;
 uint32_t Regs[31]; // 31 registers
 
+typedef struct PipeReg{
+    uint32_t instr;     // original word
+    uint32_t aluOut;    // result or address
+    uint32_t srcA, srcB;// operand values
+    uint32_t* rd;        // destination register &
+    bool     valid;     // is this slot occupied/valid?
+} PipeReg;
+
+ PipeReg pipe[4] = {0}; // oldest instruction at pipe[3]
 
 
 void print_bin32(uint32_t x) {
@@ -39,15 +48,6 @@ void print_bin32(uint32_t x) {
     MEM will take from pipe[2], access memory and send to pipe[3]
     WB will take from pipe[3], write back to the register file and voila
 */
-struct PipeReg{
-    uint32_t instr;     // original word
-    uint32_t aluOut;    // result or address
-    uint32_t srcA, srcB;// operand values
-    uint32_t rd;        // destination register #
-    bool     valid;     // is this slot occupied?
-}PipeReg;
-
-struct PipeReg pipe[4]; // oldest instruction at pipe[3]
 
 int load_instructions(const char *filename) {
     FILE *fp = fopen(filename, "r");
@@ -142,32 +142,28 @@ void printMemory(){
 
 // takes 2 clock cycles
 void fetch(){
-    pipe[0].instr = memory[PC];
-    pipe[0].valid = true;
-    PC++;
+    if (clockCycles %2 == 1)
 }
 
 void decode(){
-    if (!pipe[0].valid) 
-        return; // nothing to decode
-
-    uint32_t instr = pipe[0].instr;
-    int opcode = (instr >> 28) & 0xF;
-
-
-    int R_rd = (instr >> 23) & 0x1F;
-    int R_rt = (instr >> 18) & 0x1F;
-    int R_rs = (instr >> 23) & 0x1F;
-    int R_shamt = instr & 0x1FFF;
-
-    int I_rd = (instr >> 23) & 0x1F;
-    int I_rs = (instr >> 18) & 0x1F;
-    int I_imm = (instr) & 0x2FFFF;
-    
-
-    int J_addr = (instr) & 0xFFFFFFF;
-
     if(clockCycles % 2 == 1 && pipe[0].valid){
+
+        uint32_t instr = pipe[0].instr;
+        int opcode = (instr >> 28) & 0xF;
+
+
+        int R_rd = (instr >> 23) & 0x1F;
+        int R_rt = (instr >> 18) & 0x1F;
+        int R_rs = (instr >> 23) & 0x1F;
+        int R_shamt = instr & 0x1FFF;
+
+        int I_rd = (instr >> 23) & 0x1F;
+        int I_rs = (instr >> 18) & 0x1F;
+        int I_imm = (instr) & 0x2FFFF;
+        
+
+        int J_addr = (instr) & 0xFFFFFFF;
+
         if( opcode == 2 || opcode == 3 || opcode == 4 || opcode == 5 || opcode == 6 || opcode == 10 || opcode == 11){
             // I-type
             pipe[1].srcA = Regs[I_rs];
@@ -199,6 +195,56 @@ void decode(){
 }
 
 
+void execute(){
+
+}
+
+
+void memory_rw(){
+    // if(clockCycles %2 == 0 && pipe[2].valid){
+    //     //pipe[3].aluOut = &(memory[1024 + pipe[2].srcA + pipe[2].srcB]);
+        
+    //     if((pipe[2].instr << 28) & 0xa){
+    //         pipe[3].aluOut =  memory[1024 + pipe[2].srcA + pipe[2].srcB];
+    //     }else if ((pipe[2].instr << 28) & 0xb){
+    //        memory[1024 + pipe[2].srcA + pipe[2].srcB] =  *(pipe[2].rd);
+    //     }
+    //     pipe[3].valid = true;
+
+    // }
+
+
+    if (clockCycles % 2 == 0 && pipe[2].valid) {
+
+        uint32_t op = (pipe[2].instr >> 28) & 0xF;
+
+        switch (op) {
+        case 10:  /* LW */
+            pipe[3].aluOut = memory[1024 + pipe[2].srcA + pipe[2].srcB];
+            pipe[3].rd     = pipe[2].rd;   // forward pointer
+            pipe[3].valid  = true;
+            break;
+
+        case 11:  /* SW */
+            memory[1024 + pipe[2].srcA + pipe[2].srcB] = *(pipe[2].rd);
+            pipe[3].valid = false;         // nothing to write back
+            break;
+
+        default:  /* ALU instruction – just forward result/address */
+            pipe[3] = pipe[2];
+            break;
+        }
+
+        // pipe[3].instr = pipe[2].instr;
+    }
+}
+
+void write_back(){
+    if(clockCycles %2 == 1 && pipe[3].valid && !((pipe[2].instr << 28) & 0xb) ){  // 
+        *(pipe[3].rd) = pipe[3].aluOut;
+    }  
+
+}
 
 int main(){
     load_instructions("program2.txt");
