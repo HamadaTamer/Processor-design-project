@@ -8,7 +8,8 @@
 #define N 2048
 
 uint32_t memory[N];  // word‐addressable main memory
-int clockCycles = 0; // clock cycle counter 
+int clockCycles = 1; // clock cycle counter 
+int instCount   = 0;
 
 
 // Registers
@@ -119,9 +120,7 @@ int load_instructions(const char *filename) {
             else if (strcmp(op,"SW")==0)   opcode = 11;
             
             if (count < MAX_INST)
-                memory[count++] = (opcode << 28)
-                                | (rs << 23) | (rd << 18)
-                                | imm;
+                memory[count++] = (opcode << 28)| (rd << 23) | (rs << 18)| imm;
         }
         else {
             fprintf(stderr, "Unknown opcode ‘%s’ at line %d\n", op, count+1);
@@ -135,7 +134,7 @@ int load_instructions(const char *filename) {
 
 void printMemory(){
     int i =0;
-    while (memory[i] != 0) {
+    while (memory[i] != 0 ) {
         print_bin32(memory[i]);
         //printf("0x%08x\n", memory[i]);
         i++;
@@ -144,7 +143,8 @@ void printMemory(){
 
 // takes 2 clock cycles
 void fetch(){
-    if (clockCycles %2 == 1){
+    if (clockCycles % 2 == 1 && PC < instCount){
+        printf("fetching instruction %d\n", PC);
         pipe[0].instr = memory[PC];
         pipe[0].valid = true;
         PC++;
@@ -152,21 +152,25 @@ void fetch(){
 }
 
 void decode(){
+    if (pipe[0].valid && clockCycles % 2 != 1){
+        printf("decoding instruction (stall) 0x%08x\n", pipe[0].instr);
+    }
     if(clockCycles % 2 == 1 && pipe[0].valid){
 
+        printf("decoding instruction 0x%08x\n", pipe[0].instr);
         uint32_t instr = pipe[0].instr;
         int opcode = (instr >> 28) & 0xF;
 
 
-        int rd = (instr >> 23) & 0x1F;
-        int rs = (instr >> 18) & 0x1F;
-        
-        int R_rt = (instr >> 23) & 0x1F;
-        int R_shamt = instr & 0x1FFF;
+        int rd = (instr >> 23) & 0x1F;          /* bits 27-23 */
+        int rs = (instr >> 18) & 0x1F;          /* bits 22-18 – I-type dest */
+
+       int R_rs2   = (instr >> 13) & 0x1F;      /* bits 17-13 – real rs for R-type */
+        int R_shamt=  instr         & 0x1FFF;
 
         // int I_rd = (instr >> 23) & 0x1F;
         // int I_rs = (instr >> 18) & 0x1F;
-        int imm = (instr) & 0x2FFFF;
+        int imm = (instr) & 0x3FFFF;
         
 
         int J_addr = (instr) & 0xFFFFFFF;
@@ -183,8 +187,8 @@ void decode(){
             pipe[1].rd = 0; // no destination register for J-type
         }else if(opcode == 0 || opcode == 1 || opcode == 8 || opcode == 9){
             // R-type
-            pipe[1].srcA = Regs[rs];
-            pipe[1].srcB = Regs[R_rt];
+            pipe[1].srcA = Regs[R_rs2];
+            pipe[1].srcB = Regs[rs];
             pipe[1].rd = &Regs[rd];
             pipe[1].shamt = R_shamt;
         }else{
@@ -195,12 +199,15 @@ void decode(){
         pipe[1].opcode = opcode;
         pipe[1].instr = pipe[0].instr;
         pipe[1].valid = true;  
+        pipe[0].instr = 0; // clear the instruction in the fetch stage
+        pipe[0].valid  = false; 
     }
 }
 
 
 void execute(){
     if(pipe[1].valid ){
+        printf("executing instruction 0x%08x\n", pipe[1].instr);
         switch (pipe[1].opcode)
         {
         case 0:
@@ -240,11 +247,14 @@ void execute(){
         default:
             break;
         }
+        if (clockCycles %2 == 1){
+            pipe[2].valid = true;
+            pipe[2].rd = pipe[1].rd;
+            pipe[2].instr = pipe[1].instr;
+            pipe[1].valid = false;
+            pipe[1].instr = 0; // clear the instruction in the decode stage
+        }
     }
-   if (clockCycles %2 == 1){
-    pipe[2].valid = true;
-    pipe[2].rd = pipe[1].rd;
-   }
 }
 
 
@@ -263,7 +273,7 @@ void memory_rw(){
 
 
     if (clockCycles % 2 == 0 && pipe[2].valid) {
-
+        printf("memory access instruction %d\n", PC);
         uint32_t op = (pipe[2].instr >> 28) & 0xF;
 
         switch (op) {
@@ -285,24 +295,75 @@ void memory_rw(){
 
         // pipe[3].instr = pipe[2].instr;
         pipe[2].valid = false;
+        pipe[2].instr = 0; // clear the instruction in the execute stage
     }
 }
 
 void write_back(){
-    if(clockCycles %2 == 1 && pipe[3].valid && *(pipe[3].rd) != &Regs[0] ){  
+    if (clockCycles % 2 == 1 && pipe[3].valid && pipe[3].rd && pipe[3].rd != &Regs[0] && pipe[3].rd != &PC){
         *(pipe[3].rd) = pipe[3].aluOut;
+        pipe[3].valid = false;
+        pipe[3].instr = pipe[2].instr;  
+        printf("writing back instruction %d\n", PC);
         pipe[3].valid = false;
     }  
 
 }
 
-int main(){
-    load_instructions("program2.txt");
-    printMemory();
+/* -----------------------------------------------------------
+ *  Debug dump:  registers, PC, and every pipeline latch
+ * ----------------------------------------------------------- */
+static void print_state(void)
+{
+    printf("\n================  CYCLE %d  ================\n", clockCycles);
 
-    while(memory[PC] != 0 && pipe[0].valid && pipe[1].valid && pipe[2].valid && pipe[3].valid){
-        fetch(); decode(); execute(); memory_rw(); write_back();
+    /*--- PC ---*/
+    printf("PC  : %d (0x%08x)\n\n", PC, PC);
+
+    /*--- GENERAL-PURPOSE REGISTERS ---*/
+    for (int i = 0; i < 32; ++i) {
+        printf("R%02d:%3u  ", i, Regs[i]);
+        if ((i & 7) == 7) putchar('\n');           /* break every 8 registers */
+    }
+    putchar('\n');
+
+    /*--- PIPELINE REGISTERS ---*/
+    const char *stage[4] = { "IF ", "ID ", "EX ", "MEM" };
+    for (int i = 0; i < 4; ++i) {
+        printf("%s | valid:%d  instr:0x%08x  op:%2u  A:%d  B:%d  sh:%u  alu:0x%08x  rd:",
+               stage[i],
+               pipe[i].valid,
+               pipe[i].instr,
+               pipe[i].opcode,
+               pipe[i].srcA,
+               pipe[i].srcB,
+               pipe[i].shamt,
+               pipe[i].aluOut);
+
+        /* pretty-print destination register pointer */
+        if (!pipe[i].rd)                 printf("--");
+        else if (pipe[i].rd == &PC)      printf("PC");
+        else                             printf("R%ld", pipe[i].rd - Regs);
+
+        putchar('\n');
+    }
+    puts("============================================\n");
+}
+
+int main(){
+    printf("Hello World!\n");
+    instCount = load_instructions("program2.txt");
+    printMemory();
+    int i=0;
+    while ((PC < instCount   || pipe[0].valid || pipe[1].valid ||pipe[2].valid || pipe[3].valid) && i++ < 40 ){
+        write_back();
+        memory_rw();
+        execute();
+        decode();
+        fetch();
+        print_state();
         clockCycles++;
+        printf("clock cycle %d\n", clockCycles);
     }
 
     return 0;
