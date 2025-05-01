@@ -222,10 +222,9 @@ void execute(){
         case 4:
             if (Regs[*pipe[1].rd != pipe[1].srcA]){
                 pipe[2].rd = &PC;
-                pipe[2].aluOut = PC + pipe[1].srcB;
-                // PC = PC + pipe[1].srcB;
+                pipe[2].aluOut = PC + pipe[1].srcB ;
+                PC = PC + pipe[1].srcB -2;
                 pipe[0].valid = false;
-                pipe[1].valid = false;
             }
             break;
         case 5:
@@ -235,9 +234,11 @@ void execute(){
             pipe[2].aluOut = pipe[1].srcA | pipe[1].srcB;
             break;
         case 7:
-            pipe[2].aluOut = (PC & 0x70000000) || pipe[0].srcB;
+            PC = ((PC & 0x70000000) | pipe[1].srcB) -1;
+            pipe[0].valid = false;    /* flush IF  */
+
             break;
-        case 8:
+            case 8:
             pipe[2].aluOut = pipe[1].srcB << pipe[1].shamt;
             break;
         case 9:
@@ -248,7 +249,8 @@ void execute(){
         }
         if (clockCycles %2 == 1){
             pipe[2].valid = true;
-            pipe[2].rd = pipe[1].rd;
+            if (pipe[1].opcode != 7)
+                pipe[2].rd = pipe[1].rd;
             pipe[2].instr = pipe[1].instr;
             pipe[1].valid = false;
             //pipe[1].instr = 0; // clear the instruction in the decode stage
@@ -299,7 +301,7 @@ void memory_rw(){
 }
 
 void write_back(){
-    if (clockCycles % 2 == 1 && pipe[3].valid && pipe[3].rd && pipe[3].rd != &Regs[0] && pipe[3].rd != &PC){
+    if (clockCycles % 2 == 1 && pipe[3].valid && pipe[3].rd && pipe[3].rd != &Regs[0] ){
         *(pipe[3].rd) = pipe[3].aluOut;
         pipe[3].valid = false;
         pipe[3].instr = pipe[2].instr;  
@@ -321,7 +323,7 @@ static void print_state(void)
 
     /*--- GENERAL-PURPOSE REGISTERS ---*/
     for (int i = 0; i < 32; ++i) {
-        printf("R%02d:%3u  ", i, Regs[i]);
+        printf("R%02d:%5u  ", i, Regs[i]);
         if ((i & 7) == 7) putchar('\n');           /* break every 8 registers */
     }
     putchar('\n');
