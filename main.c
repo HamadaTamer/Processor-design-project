@@ -2,16 +2,21 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
+#include <stdbool.h>
+
 
 #define N 2048
 
 uint32_t memory[N];  // word‐addressable main memory
+int clockCycles = 0; // clock cycle counter 
 
 
 // Registers
-int pc =0;
+int PC =0;
 const uint32_t zeroReg = 0;
-uint32_t Regs[32]; // 32 registers
+uint32_t Regs[31]; // 31 registers
+
+
 
 void print_bin32(uint32_t x) {
     for (int i = 31; i >= 0; i--) {
@@ -23,6 +28,26 @@ void print_bin32(uint32_t x) {
 
 #define MAX_LINE 128
 #define MAX_INST  1024
+
+/*
+    so the idea is that the PipeReg will be what we will use to track the pipeline stages and allow them to feed information to each other
+    the pipeline will be 5 stages: IF, ID, EX, MEM, WB
+    the pipe array will be used in the following sense:
+    pipe [0] is where the instruction is fetched onto 
+    ID will take from pip[0], decode, and send to pipe[1]
+    EX will take from pipe[1], execute and send to pipe[2]
+    MEM will take from pipe[2], access memory and send to pipe[3]
+    WB will take from pipe[3], write back to the register file and voila
+*/
+struct PipeReg{
+    uint32_t instr;     // original word
+    uint32_t aluOut;    // result or address
+    uint32_t srcA, srcB;// operand values
+    uint32_t rd;        // destination register #
+    bool     valid;     // is this slot occupied?
+}PipeReg;
+
+struct PipeReg pipe[4]; // oldest instruction at pipe[3]
 
 int load_instructions(const char *filename) {
     FILE *fp = fopen(filename, "r");
@@ -65,10 +90,7 @@ int load_instructions(const char *filename) {
                        : (strcmp(op,"SLL")==0) ? 8 : 9;
             if (strcmp(op, "SLL") == 0 || strcmp(op, "SRL") == 0) {
                 memory[count++] = (opcode << 28)    | (rd << 23) | (rt << 18)    | (rs );
-
-                printf("SLL or SRL opcode = %d rs = %d rd = %d rt = %d\n", opcode, rs, rd, rt);
             } else {
-                printf("opcode = %d rs = %d rd = %d rt = %d\n", opcode, rs, rd, rt);
                 memory[count++] = (opcode << 28)    | (rd << 23) | (rt << 18)    | (rs << 13);
             }
         }
@@ -93,7 +115,6 @@ int load_instructions(const char *filename) {
             else if (strcmp(op,"ORI")==0)   opcode = 6;
             else if (strcmp(op,"LW")==0)   opcode = 10;
             else if (strcmp(op,"SW")==0)   opcode = 11;
-            printf("opcode = %d rs = %d rd = %d imm = %d\n", opcode, rs, rd, imm);
             
             if (count < MAX_INST)
                 memory[count++] = (opcode << 28)
@@ -108,6 +129,8 @@ int load_instructions(const char *filename) {
     fclose(fp);
     return count;
 }
+
+
 void printMemory(){
     int i =0;
     while (memory[i] != 0) {
@@ -117,9 +140,76 @@ void printMemory(){
     }
 }
 
+// takes 2 clock cycles
+void fetch(){
+    pipe[0].instr = memory[PC];
+    pipe[0].valid = true;
+    PC++;
+}
+
+void decode(){
+    if (!pipe[0].valid) 
+        return; // nothing to decode
+
+    uint32_t instr = pipe[0].instr;
+    int opcode = (instr >> 28) & 0xF;
+
+
+    int R_rd = (instr >> 23) & 0x1F;
+    int R_rt = (instr >> 18) & 0x1F;
+    int R_rs = (instr >> 23) & 0x1F;
+    int R_shamt = instr & 0x1FFF;
+
+    int I_rd = (instr >> 23) & 0x1F;
+    int I_rs = (instr >> 18) & 0x1F;
+    int I_imm = (instr) & 0x2FFFF;
+    
+
+    int J_addr = (instr) & 0xFFFFFFF;
+
+    if(clockCycles % 2 == 1 && pipe[0].valid){
+        if( opcode == 2 || opcode == 3 || opcode == 4 || opcode == 5 || opcode == 6 || opcode == 10 || opcode == 11){
+            // I-type
+            pipe[1].srcA = Regs[I_rs];
+            pipe[1].srcB = I_imm;
+            pipe[1].rd = I_rd;
+        }else if(opcode == 7){
+            // J-type
+            pipe[1].srcA = PC;
+            pipe[1].srcB = J_addr;
+            pipe[1].rd = 0; // no destination register for J-type
+        }else if(opcode == 0 || opcode == 1 || opcode == 8 || opcode == 9){
+            // R-type
+            pipe[1].srcA = Regs[R_rs];
+            pipe[1].srcB = Regs[R_rt];
+            pipe[1].rd = R_rd;
+        }else{
+            // invalid opcode
+            fprintf(stderr, "Invalid opcode %d at PC %d\n", opcode, PC);
+            return;
+        }
+        pipe[1].valid = true;
+    }
+
+
+    // decode the instruction and set the appropriate values in the pipeline register
+        
+
+    
+}
+
+
+
 int main(){
     load_instructions("program2.txt");
     printMemory();
 
     return 0;
 }
+
+
+
+/*
+tracking the pipeline stages
+
+*/
