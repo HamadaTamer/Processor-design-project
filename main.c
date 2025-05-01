@@ -23,6 +23,7 @@ typedef struct PipeReg{
     uint32_t aluOut;    // result or address
     int32_t srcA, srcB;
     uint32_t shamt;// operand values
+    uint32_t  pc;  
     uint32_t* rd;        // destination register 
     bool     valid;     // is this slot occupied/valid?
 } PipeReg;
@@ -145,6 +146,7 @@ void fetch(){
     if (clockCycles % 2 == 1 && PC < instCount){
         printf("fetching instruction %d\n", PC);
         pipe[0].instr = memory[PC];
+        pipe[0].pc    = PC;        
         pipe[0].valid = true;
         PC++;
     }
@@ -174,7 +176,11 @@ void decode(){
 
         int J_addr = (instr) & 0xFFFFFFF;
 
-        if( opcode == 2 || opcode == 3 || opcode == 4 || opcode == 5 || opcode == 6 || opcode == 10 || opcode == 11){
+        if (opcode == 4) {                   /* BNE r1,r2,offset              */
+            pipe[1].srcA = Regs[rd];     /* r1 value                       */
+            pipe[1].srcB = Regs[rs];     /* r2 value                       */
+            pipe[1].shamt = (int16_t)imm;/* keep the signed offset         */
+        }else if( opcode == 2 || opcode == 3 || opcode == 4 || opcode == 5 || opcode == 6 || opcode == 10 || opcode == 11){
             // I-type
             pipe[1].srcA = Regs[rs];
             pipe[1].srcB = imm;
@@ -196,6 +202,7 @@ void decode(){
             return;
         }
         pipe[1].opcode = opcode;
+        pipe[1].pc = PC;
         pipe[1].instr = pipe[0].instr;
         pipe[1].valid = true;  
         pipe[0].instr = 0; // clear the instruction in the fetch stage
@@ -220,11 +227,16 @@ void execute(){
             pipe[2].aluOut = pipe[1].srcA - pipe[1].srcB;
             break;
         case 4:
+
+        /*
+            pipe[1].srcA = Regs[rs];
+            pipe[1].srcB = imm;
+            pipe[1].rd = &Regs[rd];
+        */
             if (Regs[*pipe[1].rd != pipe[1].srcA]){
-                pipe[2].rd = &PC;
-                pipe[2].aluOut = PC + pipe[1].srcB ;
-                PC = PC + pipe[1].srcB -2;
-                pipe[0].valid = false;
+                PC = pipe[1].pc + pipe[1].shamt;
+                pipe[0].valid = false;   /* flush the instruction that was     */
+     
             }
             break;
         case 5:
