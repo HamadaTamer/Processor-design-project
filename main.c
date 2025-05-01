@@ -367,7 +367,7 @@ int main(){
     printf("Hello World!\n");
     instCount = load_instructions("program2.txt");
     printMemory();
-    int i=0;
+    int i=0;        // infinite loop gaurd 
     while ((PC < instCount   || pipe[0].valid || pipe[1].valid ||pipe[2].valid || pipe[3].valid) && i++ < 40 ){
         write_back();
         memory_rw();
