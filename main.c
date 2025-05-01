@@ -142,7 +142,11 @@ void printMemory(){
 
 // takes 2 clock cycles
 void fetch(){
-    if (clockCycles %2 == 1)
+    if (clockCycles %2 == 1){
+        pipe[0].instr = memory[PC];
+        pipe[0].valid = true;
+        PC++;
+    }
 }
 
 void decode(){
@@ -184,7 +188,8 @@ void decode(){
             fprintf(stderr, "Invalid opcode %d at PC %d\n", opcode, PC);
             return;
         }
-        pipe[1].valid = true;
+        pipe[1].instr = pipe[0].instr;
+        pipe[1].valid = true;  
     }
 
 
@@ -240,7 +245,7 @@ void memory_rw(){
 }
 
 void write_back(){
-    if(clockCycles %2 == 1 && pipe[3].valid && !((pipe[2].instr << 28) & 0xb) ){  // 
+    if(clockCycles %2 == 1 && pipe[3].valid ){  
         *(pipe[3].rd) = pipe[3].aluOut;
     }  
 
@@ -252,10 +257,3 @@ int main(){
 
     return 0;
 }
-
-
-
-/*
-tracking the pipeline stages
-
-*/
