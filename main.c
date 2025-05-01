@@ -13,14 +13,16 @@ int clockCycles = 0; // clock cycle counter
 
 // Registers
 int PC =0;
-const uint32_t zeroReg = 0;
-uint32_t Regs[31]; // 31 registers
+// const uint32_t zeroReg = 0;
+uint32_t Regs[32]; // 31 registers
 
 typedef struct PipeReg{
     uint32_t instr;     // original word
+    uint32_t opcode;
     uint32_t aluOut;    // result or address
-    uint32_t srcA, srcB;// operand values
-    uint32_t* rd;        // destination register &
+    int32_t srcA, srcB;
+    uint32_t shamt;// operand values
+    uint32_t* rd;        // destination register 
     bool     valid;     // is this slot occupied/valid?
 } PipeReg;
 
@@ -156,23 +158,24 @@ void decode(){
         int opcode = (instr >> 28) & 0xF;
 
 
-        int R_rd = (instr >> 23) & 0x1F;
-        int R_rt = (instr >> 18) & 0x1F;
-        int R_rs = (instr >> 23) & 0x1F;
+        int rd = (instr >> 23) & 0x1F;
+        int rs = (instr >> 18) & 0x1F;
+        
+        int R_rt = (instr >> 23) & 0x1F;
         int R_shamt = instr & 0x1FFF;
 
-        int I_rd = (instr >> 23) & 0x1F;
-        int I_rs = (instr >> 18) & 0x1F;
-        int I_imm = (instr) & 0x2FFFF;
+        // int I_rd = (instr >> 23) & 0x1F;
+        // int I_rs = (instr >> 18) & 0x1F;
+        int imm = (instr) & 0x2FFFF;
         
 
         int J_addr = (instr) & 0xFFFFFFF;
 
         if( opcode == 2 || opcode == 3 || opcode == 4 || opcode == 5 || opcode == 6 || opcode == 10 || opcode == 11){
             // I-type
-            pipe[1].srcA = Regs[I_rs];
-            pipe[1].srcB = I_imm;
-            pipe[1].rd = I_rd;
+            pipe[1].srcA = Regs[rs];
+            pipe[1].srcB = imm;
+            pipe[1].rd = &Regs[rd];
         }else if(opcode == 7){
             // J-type
             pipe[1].srcA = PC;
@@ -180,28 +183,68 @@ void decode(){
             pipe[1].rd = 0; // no destination register for J-type
         }else if(opcode == 0 || opcode == 1 || opcode == 8 || opcode == 9){
             // R-type
-            pipe[1].srcA = Regs[R_rs];
+            pipe[1].srcA = Regs[rs];
             pipe[1].srcB = Regs[R_rt];
-            pipe[1].rd = R_rd;
+            pipe[1].rd = &Regs[rd];
+            pipe[1].shamt = R_shamt;
         }else{
             // invalid opcode
             fprintf(stderr, "Invalid opcode %d at PC %d\n", opcode, PC);
             return;
         }
+        pipe[1].opcode = opcode;
         pipe[1].instr = pipe[0].instr;
         pipe[1].valid = true;  
     }
-
-
-    // decode the instruction and set the appropriate values in the pipeline register
-        
-
-    
 }
 
 
 void execute(){
-
+    if(pipe[1].valid ){
+        switch (pipe[1].opcode)
+        {
+        case 0:
+        case 3:
+            pipe[2].aluOut = pipe[1].srcA + pipe[1].srcB;
+            break;
+        case 1:
+            pipe[2].aluOut = pipe[1].srcA * pipe[1].srcB;
+            break;
+        case 2:
+            pipe[2].aluOut = pipe[1].srcA - pipe[1].srcB;
+            break;
+        case 4:
+            if (Regs[*pipe[1].rd != pipe[1].srcA]){
+                pipe[2].rd = &PC;
+                pipe[2].aluOut = PC + pipe[1].srcB;
+                // PC = PC + pipe[1].srcB;
+                pipe[0].valid = false;
+                pipe[1].valid = false;
+            }
+            break;
+        case 5:
+            pipe[2].aluOut = pipe[1].srcA & pipe[1].srcB;
+            break;
+        case 6:
+            pipe[2].aluOut = pipe[1].srcA | pipe[1].srcB;
+            break;
+        case 7:
+            pipe[2].aluOut = (PC & 0x70000000) || pipe[0].srcB;
+            break;
+        case 8:
+            pipe[2].aluOut = pipe[1].srcA << pipe[1].shamt;
+            break;
+        case 9:
+            pipe[2].aluOut = pipe[1].srcA >> pipe[1].shamt; 
+            break;
+        default:
+            break;
+        }
+    }
+   if (clockCycles %2 == 1){
+    pipe[2].valid = true;
+    pipe[2].rd = pipe[1].rd;
+   }
 }
 
 
@@ -241,12 +284,14 @@ void memory_rw(){
         }
 
         // pipe[3].instr = pipe[2].instr;
+        pipe[2].valid = false;
     }
 }
 
 void write_back(){
-    if(clockCycles %2 == 1 && pipe[3].valid ){  
+    if(clockCycles %2 == 1 && pipe[3].valid && *(pipe[3].rd) != &Regs[0] ){  
         *(pipe[3].rd) = pipe[3].aluOut;
+        pipe[3].valid = false;
     }  
 
 }
@@ -255,5 +300,16 @@ int main(){
     load_instructions("program2.txt");
     printMemory();
 
+    while(memory[PC] != 0 && pipe[0].valid && pipe[1].valid && pipe[2].valid && pipe[3].valid){
+        fetch(); decode(); execute(); memory_rw(); write_back();
+        clockCycles++;
+    }
+
     return 0;
 }
+
+/*
+
+fetch happens first then flush
+flush happens after second execute
+*/
