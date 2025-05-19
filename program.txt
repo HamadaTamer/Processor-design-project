@@ -1,32 +1,20 @@
-LOAD  R1, R0, 100
-LOAD  R2, R0, 104
-ADD   R3, R1, R2
-SLL   R4, R3, 1
-SRL   R5, R4, 2
-STORE R5, R0, 108
-LOAD  R6, R0, 108
-SUB   R7, R6, R1
-OR    R8, R7, R2
-AND   R9, R8, R3
-BNE   R9, R0, 2
-ADD   R10, R9, R9
-J     14
-SUB   R10, R3, R2
-STORE R10, R0, 112
-
-
-chatgpt approximation:
-
-    Timeline for first & last instruction:
-
-        Inst 1:
-
-            IF@1 → ID@2–3 → EX@4–5 → MEM@6 → WB@7
-
-        Inst 15:
-
-            IF@29 → ID@30–31 → EX@32–33 → MEM@34 → WB@35
-
-    Peak parallelism: up to 4 instructions “in flight” once the pipeline is full (e.g. by cycle 7).
-
-So your simulator should run for 35 clock cycles, fetching at odd cycles up to cycle 29, then draining the pipeline through cycle 35.
+ADDI R1,  R0,  5    # R1 = 5
+ADDI R2,  R0,  3    # R2 = 3
+ADD  R3,  R1,  R2   # R3 = R1 + R2 = 8
+SUB  R4,  R1,  R2   # R4 = R1 − R2 = 2
+MULI R5,  R1,  4    # R5 = R1 × 4 = 20
+BNE  R1,  R2,  2    # 5≠3 → PC += 2
+ANDI R6,  R1,  1    # R6 = R1 & 1 = 1
+ORI  R7,  R1,  2    # R7 = R1 | 2 = 7
+SLL  R8,  R1,  1    # R8 = R1 << 1 = 10
+SRL  R9,  R2,  1    # R9 = R2 >> 1 = 1
+ADDI R10, R0, 100   # R10 = 100
+SW   R10, R0, 0     # M[1024+0+0] = 100
+LW   R11, R0, 0     # R11 = M[1024+0+0] = 100
+ADDI R12, R0, 1     # (skipped)
+ADDI R12, R0, 2     # executed → R12 = 2
+J    20             # absolute jump to inst #20
+ADDI R13, R0, 1     # skipped
+ADDI R13, R0, 2     # skipped
+ADDI R13, R0, 3     # skipped
+ADDI R14, R0, 14    # at addr 20 → R14 = 14

@@ -7,12 +7,5 @@ ADDI R10, R0, 11
 ADDI R11, R0, 11
 ADDI R12, R0, 11
 ADDI R13, R0, 11
-ADDI R14, R0, 11    ; skipped by jump
-ADDI R15, R0, 11    ; executes after target
-
-
-
-0 -> nothing executes
-1 -> skips 1
-2 -> skips 3
-3 -> skips 5
+ADDI R14, R0, 11 
+ADDI R15, R0, 11

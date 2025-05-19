@@ -14,8 +14,8 @@ int instCount   = 0;
 
 // Registers
 int PC =0;
-// const uint32_t zeroReg = 0;
-uint32_t Regs[32]; // 31 registers
+const uint32_t R0 = 0;
+uint32_t Regs[31]; // 31 registers
 
 typedef struct PipeReg{
     uint32_t instr;     // original word
@@ -180,7 +180,7 @@ void decode(){
             pipe[1].srcA = Regs[rd];     /* r1 value                       */
             pipe[1].srcB = Regs[rs];     /* r2 value                       */
             pipe[1].shamt = (int16_t)imm;/* keep the signed offset         */
-        }else if( opcode == 2 || opcode == 3 || opcode == 4 || opcode == 5 || opcode == 6 || opcode == 10 || opcode == 11){
+        }else if( opcode == 2 || opcode == 3 || opcode == 5 || opcode == 6 || opcode == 10 || opcode == 11){
             // I-type
             pipe[1].srcA = Regs[rs];
             pipe[1].srcB = imm;
@@ -221,19 +221,13 @@ void execute(){
             pipe[2].aluOut = pipe[1].srcA + pipe[1].srcB;
             break;
         case 1:
-            pipe[2].aluOut = pipe[1].srcA * pipe[1].srcB;
-            break;
-        case 2:
             pipe[2].aluOut = pipe[1].srcA - pipe[1].srcB;
             break;
+        case 2:
+            pipe[2].aluOut = pipe[1].srcA * pipe[1].srcB;
+            break;
         case 4:
-
-        /*
-            pipe[1].srcA = Regs[rs];
-            pipe[1].srcB = imm;
-            pipe[1].rd = &Regs[rd];
-        */
-            if (Regs[*pipe[1].rd != pipe[1].srcA]){
+            if (pipe[1].srcA != pipe[1].srcB){
                 PC = pipe[1].pc + pipe[1].shamt;
                 pipe[0].valid = false;   /* flush the instruction that was     */
      
@@ -246,7 +240,8 @@ void execute(){
             pipe[2].aluOut = pipe[1].srcA | pipe[1].srcB;
             break;
         case 7:
-            PC = ((PC & 0x70000000) | pipe[1].srcB) -1;
+            PC = ((PC & 0xF0000000) | pipe[1].srcB) ;
+            PC -=1;
             pipe[0].valid = false;    /* flush IF  */
 
             break;
@@ -326,46 +321,81 @@ void write_back(){
 /* -----------------------------------------------------------
  *  Debug dump:  registers, PC, and every pipeline latch
  * ----------------------------------------------------------- */
+/* -----------------------------------------------------------
+ *  Debug dump:  registers, PC, pipeline latches, and updates
+ * ----------------------------------------------------------- */
 static void print_state(void)
 {
-    printf("\n================  CYCLE %d  ================\n", clockCycles);
-
-    /*--- PC ---*/
-    printf("PC  : %d (0x%08x)\n\n", PC, PC);
-
-    /*--- GENERAL-PURPOSE REGISTERS ---*/
-    for (int i = 0; i < 32; ++i) {
-        printf("R%02d:%5u  ", i, Regs[i]);
-        if ((i & 7) == 7) putchar('\n');           /* break every 8 registers */
+    /* keep a copy of last cycle’s registers & memory */
+    static uint32_t prevRegs[32];
+    static uint32_t prevMem[N];
+    static bool first = true;
+    if (first) {
+        memcpy(prevRegs, Regs, sizeof(Regs));
+        memcpy(prevMem, memory, sizeof(memory));
+        first = false;
     }
-    putchar('\n');
 
-    /*--- PIPELINE REGISTERS ---*/
-    const char *stage[4] = { "IF ", "ID ", "EX ", "MEM" };
+    /* 1) Cycle number */
+    printf("\n==========  CYCLE %d  ==========\n\n", clockCycles);
+
+    /* 2) Pipeline stages */
+    const char *stageName[4] = { "IF ", "ID ", "EX ", "MEM" };
     for (int i = 0; i < 4; ++i) {
-        printf("%s | valid:%d  instr:0x%08x  op:%2u  A:%d  B:%d  sh:%u  alu:0x%08x  rd:",
-               stage[i],
-               pipe[i].valid,
-               pipe[i].instr,
-               pipe[i].opcode,
-               pipe[i].srcA,
-               pipe[i].srcB,
-               pipe[i].shamt,
-               pipe[i].aluOut);
-
-        /* pretty-print destination register pointer */
-        if (!pipe[i].rd)                 printf("--");
-        else if (pipe[i].rd == &PC)      printf("PC");
-        else                             printf("R%ld", pipe[i].rd - Regs);
-
-        putchar('\n');
+        if (!pipe[i].valid) {
+            printf("%s | <empty>\n", stageName[i]);
+            continue;
+        }
+        printf(
+          "%s | instr=0x%08x  srcA=%d  srcB=%d  shamt=%u\n",
+          stageName[i],
+          pipe[i].instr,
+          pipe[i].srcA,
+          pipe[i].srcB,
+          pipe[i].shamt
+        );
     }
-    puts("============================================\n");
+
+    /* 3) Register updates */
+    bool anyReg = false;
+    printf("\nRegister updates:\n");
+    for (int i = 0; i < 32; ++i) {
+        if (Regs[i] != prevRegs[i]) {
+            printf("  R%02d: %u -> %u\n", i, prevRegs[i], Regs[i]);
+            prevRegs[i] = Regs[i];
+            anyReg = true;
+        }
+    }
+    if (!anyReg) {
+        printf("  (none)\n");
+    }
+
+    /* 4) Data‐memory updates (word addr 1024+) */
+    bool anyMem = false;
+    printf("\nMemory updates (data segment):\n");
+    for (int addr = 1024; addr < N; ++addr) {
+        if (memory[addr] != prevMem[addr]) {
+            printf(
+              "  M[%4d]: %u -> %u\n",
+              addr,
+              prevMem[addr],
+              memory[addr]
+            );
+            prevMem[addr] = memory[addr];
+            anyMem = true;
+        }
+    }
+    if (!anyMem) {
+        printf("  (none)\n");
+    }
+
+    puts("============================================");
 }
 
-int main(){
+
+ int main(){
     printf("Hello World!\n");
-    instCount = load_instructions("program2.txt");
+    instCount = load_instructions("program.txt");
     printMemory();
     int i=0;        // infinite loop gaurd 
     while ((PC < instCount   || pipe[0].valid || pipe[1].valid ||pipe[2].valid || pipe[3].valid) && i++ < 40 ){
@@ -379,6 +409,14 @@ int main(){
         printf("clock cycle %d\n", clockCycles);
     }
 
+    printMemory();
+    /*--- GENERAL-PURPOSE REGISTERS ---*/
+    for (int i = 0; i < 32; ++i) {
+        printf("R%02d:%5u  ", i, Regs[i]);
+        if ((i & 7) == 7) putchar('\n');           /* break every 8 registers */
+    }
+    putchar('\n');
+    
     return 0;
 }
 
