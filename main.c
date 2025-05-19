@@ -15,7 +15,7 @@ int instCount   = 0;
 // Registers
 int PC =0;
 const uint32_t R0 = 0;
-uint32_t Regs[31]; // 31 registers
+uint32_t Regs[32]; // 31 registers
 
 typedef struct PipeReg{
     uint32_t instr;     // original word
@@ -395,7 +395,7 @@ static void print_state(void)
 
  int main(){
     printf("Hello World!\n");
-    instCount = load_instructions("program.txt");
+    instCount = load_instructions("program2.txt");
     printMemory();
     int i=0;        // infinite loop gaurd 
     while ((PC < instCount   || pipe[0].valid || pipe[1].valid ||pipe[2].valid || pipe[3].valid) && i++ < 40 ){
@@ -411,11 +411,13 @@ static void print_state(void)
 
     printMemory();
     /*--- GENERAL-PURPOSE REGISTERS ---*/
-    for (int i = 0; i < 32; ++i) {
+    for (int i = 1; i < 32; ++i) {
         printf("R%02d:%5u  ", i, Regs[i]);
         if ((i & 7) == 7) putchar('\n');           /* break every 8 registers */
     }
     putchar('\n');
+    printf("R00: %5u\n", R0);
+
     
     return 0;
 }
